@@ -1,0 +1,21 @@
+{
+  "name": "Bubble Buddies",
+  "genre": "platformer",
+  "dim": "2D",
+  "mode": "Co-op",
+  "players": "1–4",
+  "hook": "Blow bubbles, trap the critters, pop them into fruit.",
+  "how": "Blow a bubble at a critter to trap it, then jump into the bubble to pop it into fruit. Hold jump to bounce on bubbles and ride them up. Clear every critter to reach the next level; the team shares its lives.",
+  "controls": "Arrows or A/D to move, Z or Space to jump (hold to ride bubbles), X to blow; on touch, the on-screen buttons",
+  "uses": [
+    ["Leaderboard", "The team's score, shown when the last life is gone."],
+    ["Bots", "A bot buddy joins you when you play alone."],
+    ["Host-run rules", "The host's browser runs the critters, bubbles and fruit; if it leaves, the next player takes over."],
+    ["Live sync", "Everyone runs and jumps in the same level at once."]
+  ],
+  "ideas": [
+    "Add a boss level every fifth level",
+    "Make the bubbles shoot farther the longer I hold the button",
+    "Add a power-up shoe that makes me run faster"
+  ]
+}
