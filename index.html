@@ -21,12 +21,14 @@
   .card h2 { margin: 0 0 4px; font-size: 28px; color: #ffe66d; } .card h3 { margin: 14px 0 4px; font-size: 13px; color: #8be9ff; text-align: left; text-transform: uppercase; letter-spacing: .06em; }
   .card ol { margin: 0; padding-left: 24px; font-size: 14px; text-align: left; min-height: 30px; }
   .card li span { float: right; font-variant-numeric: tabular-nums; }
+  .card li.note { list-style: none; margin-left: -24px; opacity: .8; }
   .card p { margin: 10px 0 0; font-size: 13px; opacity: .75; }
   button.go { width: 100%; min-height: 48px; margin-top: 16px; border: 0; border-radius: 12px; background: #ffe66d; color: #3a2400; font: 800 17px system-ui, sans-serif; cursor: pointer; }
   .pad { position: fixed; bottom: calc(max(12px, env(safe-area-inset-bottom)) + 20px); touch-action: none; display: flex; gap: 12px; }
   .pad button { width: 70px; height: 70px; border-radius: 50%; border: 2px solid #ffffff66; background: #ffffff1c; color: #fff; font: 800 15px system-ui, sans-serif; touch-action: none; }
   .pad button.on { background: #ffffff55; }
-  #padL { left: max(12px, env(safe-area-inset-left)); } #padR { right: max(12px, env(safe-area-inset-right)); }
+  #padL { left: max(12px, env(safe-area-inset-left)); width: 152px; flex-wrap: wrap-reverse; justify-content: center; } #padR { right: max(12px, env(safe-area-inset-right)); }
+  #padL [data-k=down] { width: 54px; height: 54px; } /* ▼ (drop down) sits above ◀ ▶ */
   #padR [data-k=blow] { background: #59d8ff44; } #padR [data-k=jump] { background: #ff5d8f44; }
 </style>
 <script src="https://cdn.multiplayeragent.com/sdk/mp.global.js"></script>
@@ -37,11 +39,11 @@
 <div class="hud" id="msg"></div>
 <div class="hud" id="hint"></div>
 <div class="hud" id="net">Connecting…</div>
-<div class="pad" id="padL" hidden><button data-k="left">◀</button><button data-k="right">▶</button></div>
+<div class="pad" id="padL" hidden><button data-k="left">◀</button><button data-k="right">▶</button><button data-k="down">▼</button></div>
 <div class="pad" id="padR" hidden><button data-k="blow">BUBBLE</button><button data-k="jump">JUMP</button></div>
 <div id="over" hidden><div class="card">
   <h2 id="overTitle">Game over</h2><div id="overSub"></div>
-  <h3>Best teams</h3><ol id="board"><li>Loading…</li></ol>
+  <h3>Best teams</h3><ol id="board"><li class="note">Loading…</li></ol>
   <button class="go" id="again">Play again</button><p id="next"></p>
 </div></div>
 <script>
@@ -55,7 +57,7 @@
  *   CONNECTION .... MP_CONNECT, joining, the offline room, who is host
  *   PHYSICS ....... one function moves anyone: run, jump through blocks, land, wrap top/bottom
  *   GAME (HOST) ... levels, lives, score, critters, bubbles, fruit. Only the host writes these.
- *   BUDDY BOTS .... the helpers: line up with a critter, blow, pop, grab the fruit
+ *   BUDDY BOTS .... the helpers: line up with a critter, blow, pop, grab the fruit, ride bubbles up
  *   ME ............ my body, my bubbles, popping, riding, getting caught. Each player writes only its own.
  *   DRAW .......... blocks, players, critters, bubbles, fruit, sparkles
  *   HUD & OVER .... score, level, hearts, the game-over card, leaderboard
@@ -418,6 +420,7 @@ function placeAtSpawn(b) {
 /** Pick a job (pop a trapped critter, grab fruit, line up with a critter and blow), then walk, climb or drop to it. */
 function botControl(b, g, L) {
   const ctl = { x: 0, jump: false, down: false, blow: false };
+  b.wantUp = false; // set by goTo when the goal is higher up: then the bot rides empty bubbles instead of popping them
   if (g.ph === "intro" || g.ph === "over") return ctl;
   const t = performance.now(), d = (o) => Math.abs(o.x - b.x) + Math.abs(o.y - b.y) * 1.5;
   const near = (list) => list.sort((p, q) => d(p) - d(q))[0];
@@ -444,6 +447,7 @@ function botControl(b, g, L) {
 /** Walk to (x, y): climb by jumping up through the block above, go down by dropping through. */
 function goTo(b, to, L, ctl, reach) {
   const dx = to.x - b.x, dy = to.y - b.y;
+  b.wantUp = dy < -40;
   if (reach && dy < -10 && dy > -150 && Math.abs(dx) < 26) { ctl.jump = b.ground; ctl.x = Math.sign(dx) * 0.4; return ctl; } // right under it: jump into it
   if (dy < -40) { // above: find a block in the next row up that a jump reaches, closest to the goal
     let best = null;
@@ -467,7 +471,11 @@ function botTick(b, dt, now, g, L) {
 }
 /** On the host, for a bot (and the attract autopilot): pop what it touches, grab fruit, get caught. */
 function hostContacts(b, g) {
-  for (const x of [...host.bub.values()]) if (age(x) > CONFIG.shootTime && touchBubble(b, x)) applyPop(b.id, { i: x.i });
+  for (const x of [...host.bub.values()]) if (age(x) > CONFIG.shootTime && touchBubble(b, x)) {
+    if (x.i === b.rode && performance.now() - b.rodeAt < 400) continue; // just bounced off it
+    if (b.wantUp && x.k < 0 && b.vy > 0 && b.y < x.y + 6) { b.vy = -CONFIG.jump * 0.82; b.rode = x.i; b.rodeAt = performance.now(); continue; } // heading up: bounce on it, like a player holding jump
+    applyPop(b.id, { i: x.i });
+  }
   for (const f of [...host.fruit.values()]) if (overlap(b, { x: f.x, y: f.y, w: 20, h: 20 })) applyGrab(b.id, { i: f.i });
   if (g.ph === "play" && performance.now() > b.inv) for (const c of host.crit.values()) if (overlap(b, { x: c.x, y: c.y, w: 22, h: 22 }, 0.7)) {
     b.dead = true; b.deadUntil = performance.now() + CONFIG.respawnMs; b.hurtN++; caughtFx(b);
@@ -503,7 +511,8 @@ function myTick(dt, g, L) {
   const sc = scene(), hosting = isHost(); // the host applies its own intents directly (mp.send never comes back to the sender)
   for (const b of [...sc.bubbles]) { // bounce on a bubble while holding jump; otherwise it pops
     if (gone.has("b" + b.i) || b.age < CONFIG.shootTime * 10 || !touchBubble(me, b)) continue;
-    if (input.jump && me.vy > 0 && me.y < b.y + 6) { me.vy = -CONFIG.jump * 0.82; sfx("boing"); continue; }
+    if (b.i === me.rode && now - me.rodeAt < 400) continue; // the bubble I just bounced off: it isn't popped on the way up
+    if ((input.jump || (ATTRACT && me.wantUp && b.k < 0)) && me.vy > 0 && me.y < b.y + 6) { me.vy = -CONFIG.jump * 0.82; me.rode = b.i; me.rodeAt = now; sfx("boing"); continue; }
     gone.set("b" + b.i, now);
     if (hosting) applyPop(me.id, { i: b.i }); else net.send("pop", { i: b.i });
   }
@@ -697,7 +706,7 @@ function hud(g, L) {
   $("msg").innerHTML = g.ph === "intro" ? `Level ${g.lv}<small>${esc(L.name)}</small>` : g.ph === "clear" ? `Level clear!<small>+1 life · grab the fruit</small>` :
     g.ph === "play" && g.hurry && t - g.at < CONFIG.hurryAfter + 2000 ? "Hurry up!" : me.dead && g.ph === "play" ? "<small>Caught! Back in a moment…</small>" : "";
   $("hint").style.opacity = performance.now() - startedAt < 12000 ? 1 : 0;
-  $("hint").textContent = touchUI ? "BUBBLE traps a critter · jump into it to pop it · hold JUMP to bounce on bubbles" : "Arrows to move · X blows a bubble · Z/Space jumps (hold it to bounce on bubbles) · ↓ drops down";
+  $("hint").textContent = touchUI ? "BUBBLE traps a critter · jump into it to pop it · hold JUMP to bounce on bubbles · ▼ drops down" : "Arrows to move · X blows a bubble · Z/Space jumps (hold it to bounce on bubbles) · ↓ drops down";
   const n = livePlayers().length;
   $("net").textContent = net.offline ? "Offline: playing with a bot buddy" : dropped ? "Reconnecting…" : `Online · ${n} player${n === 1 ? "" : "s"}${isHost() ? " · you run the critters" : ""}`;
   const over = g.ph === "over" && t - g.at > 1200;
@@ -711,11 +720,11 @@ function hud(g, L) {
 }
 function showBoard(score) {
   const list = $("board");
-  if (!board) { list.innerHTML = "<li>Leaderboards need a connection.</li>"; return; }
-  list.innerHTML = "<li>Loading…</li>";
+  if (!board) { list.innerHTML = "<li class='note'>Leaderboards need a connection.</li>"; return; }
+  list.innerHTML = "<li class='note'>Loading…</li>";
   board.submit(score).catch(() => null).then(() => board.top(10)).then(({ entries }) => {
-    list.innerHTML = entries.length ? entries.map((e) => `<li>${esc(e.username || "Player")}<span>${e.score}</span></li>`).join("") : "<li>No scores yet. You're first.</li>";
-  }).catch(() => { list.innerHTML = "<li>Couldn't load the leaderboard.</li>"; });
+    list.innerHTML = entries.length ? entries.map((e) => `<li>${esc(e.username || "Player")}<span>${e.score}</span></li>`).join("") : "<li class='note'>No scores yet. You're first.</li>";
+  }).catch(() => { list.innerHTML = "<li class='note'>Couldn't load the leaderboard.</li>"; });
 }
 $("again").onclick = () => { if (isHost()) host.again = true; else net.send("again", {}); };
 let audio = null; // made on the first tap or key (browsers block sound before that)
